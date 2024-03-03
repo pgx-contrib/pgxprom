@@ -1,11 +1,4 @@
-# pgxprom
-
-A prometheus adapter for pgx
-
-## Getting Started
-
-```golang
-package main
+package pgxprom_test
 
 import (
 	"context"
@@ -16,7 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-func main() {
+func ExamplePoolStatsCollector() {
 	config, err := pgxpool.ParseConfig(os.Getenv("PGX_DATABASE_URL"))
 	if err != nil {
 		panic(err)
@@ -35,4 +28,3 @@ func main() {
 		panic(err)
 	}
 }
-```
