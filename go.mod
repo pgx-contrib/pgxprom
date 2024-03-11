@@ -3,7 +3,7 @@ module github.com/pgx-contrib/pgxprom
 go 1.22.0
 
 require (
-	github.com/jackc/pgx/v5 v5.5.4
+	github.com/jackc/pgx/v5 v5.5.5
 	github.com/prometheus/client_golang v1.19.0
 )
 
