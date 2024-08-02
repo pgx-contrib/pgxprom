@@ -24,7 +24,7 @@ var (
 )
 
 func init() {
-	labels := []string{"database", "sql_operation", "sql_operation_step"}
+	labels := []string{"db_name", "db_operation", "db_operation_phase"}
 
 	RequestTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -67,9 +67,9 @@ type Tracer struct{}
 // TraceQueryStart implements pgx.QueryTracer.
 func (q *Tracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, start pgx.TraceQueryStartData) context.Context {
 	labels := prometheus.Labels{
-		"database":           conn.Config().Database,
-		"sql_operation":      q.name(start.SQL),
-		"sql_operation_step": "query_start",
+		"db_name":            conn.Config().Database,
+		"db_operation":       q.name(start.SQL),
+		"db_operation_phase": "query_start",
 	}
 
 	RequestTotal.With(labels).Inc()
@@ -87,9 +87,9 @@ func (q *Tracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, start pgx.
 func (q *Tracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, end pgx.TraceQueryEndData) {
 	if data, ok := ctx.Value(TraceQueryKey).(*TraceQueryData); ok {
 		labels := prometheus.Labels{
-			"database":           conn.Config().Database,
-			"sql_operation":      q.name(data.SQL),
-			"sql_operation_step": "query_end",
+			"db_name":            conn.Config().Database,
+			"db_operation":       q.name(data.SQL),
+			"db_operation_phase": "query_end",
 		}
 
 		if end.Err != nil {
@@ -107,9 +107,9 @@ func (q *Tracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, start pgx.
 	}
 
 	labels := prometheus.Labels{
-		"database":           conn.Config().Database,
-		"sql_operation":      "unknown",
-		"sql_operation_step": "batch_start",
+		"db_name":            conn.Config().Database,
+		"db_operation":       "unknown",
+		"db_operation_phase": "batch_start",
 	}
 
 	RequestTotal.With(labels).Inc()
@@ -120,9 +120,9 @@ func (q *Tracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, start pgx.
 // TraceBatchQuery implements pgx.BatchTracer.
 func (q *Tracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchQueryData) {
 	labels := prometheus.Labels{
-		"database":           conn.Config().Database,
-		"sql_operation":      q.name(data.SQL),
-		"sql_operation_step": "batch_query",
+		"db_name":            conn.Config().Database,
+		"db_operation":       q.name(data.SQL),
+		"db_operation_phase": "batch_query",
 	}
 
 	if data.Err != nil {
@@ -138,9 +138,9 @@ func (q *Tracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pgx.T
 func (q *Tracer) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, end pgx.TraceBatchEndData) {
 	if data, ok := ctx.Value(TraceQueryKey).(*TraceBatchData); ok {
 		labels := prometheus.Labels{
-			"database":           conn.Config().Database,
-			"sql_operation":      "unknown",
-			"sql_operation_step": "batch_end",
+			"db_name":            conn.Config().Database,
+			"db_operation":       "unknown",
+			"db_operation_phase": "batch_end",
 		}
 
 		if end.Err != nil {
