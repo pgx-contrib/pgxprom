@@ -2,37 +2,8 @@
 
 A prometheus adapter for pgx
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/pgx-contrib/pgxprom.svg)](https://pkg.go.dev/github.com/pgx-contrib/pgxprom)
+
 ## Getting Started
 
-```golang
-package main
-
-import (
-	"context"
-	"os"
-
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pgx-contrib/pgxprom"
-	"github.com/prometheus/client_golang/prometheus"
-)
-
-func main() {
-	config, err := pgxpool.ParseConfig(os.Getenv("PGX_DATABASE_URL"))
-	if err != nil {
-		panic(err)
-	}
-
-	pool, err := pgxpool.NewWithConfig(context.TODO(), config)
-	if err != nil {
-		panic(err)
-	}
-
-	collector := pgxprom.NewPoolStatsCollector()
-	// register the pool
-	collector.Register(pool)
-	// register the collector
-	if err := prometheus.Register(collector); err != nil {
-		panic(err)
-	}
-}
-```
+You can use this [example](./tracer_test.go) to get started.
