@@ -11,9 +11,6 @@ var _ prometheus.Collector = (*PoolStatsCollector)(nil)
 
 // PoolStatsCollector is a Prometheus pool collector for pgx metrics.
 type PoolStatsCollector struct {
-	// internal pool
-	pools []*pgxpool.Pool
-	// metrics
 	acquireConns            *prometheus.Desc
 	canceledAcquireCount    *prometheus.Desc
 	constructingConns       *prometheus.Desc
@@ -24,6 +21,7 @@ type PoolStatsCollector struct {
 	newConnsCount           *prometheus.Desc
 	maxLifetimeDestroyCount *prometheus.Desc
 	maxIdleDestroyCount     *prometheus.Desc
+	pools                   []*pgxpool.Pool
 }
 
 // NewPoolStatsCollector returns a new collector.
