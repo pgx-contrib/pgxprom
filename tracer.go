@@ -14,55 +14,65 @@ var (
 	_ pgx.BatchTracer = (*Tracer)(nil)
 )
 
-var (
+// Tracer is a Prometheus query collector for pgx metrics.
+type Tracer struct {
 	// Request is the total number of database requests.
-	RequestTotal *prometheus.CounterVec
+	requestTotal *prometheus.CounterVec
 	// ErrorsTotal is the total number of database request errors.
-	ErrorsTotal *prometheus.CounterVec
+	errorsTotal *prometheus.CounterVec
 	// Duration is the time taken to complete a database request and process the response.
-	Duration *prometheus.HistogramVec
-)
-
-func init() {
-	labels := []string{"db_name", "db_operation", "db_operation_phase"}
-
-	RequestTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: "pgx",
-			Subsystem: "conn",
-			Name:      "requests_total",
-			Help:      "Total number of database requests.",
-		},
-		labels,
-	)
-
-	ErrorsTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: "pgx",
-			Subsystem: "conn",
-			Name:      "request_errors_total",
-			Help:      "Total number of database request errors.",
-		},
-		labels,
-	)
-
-	Duration = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Namespace: "pgx",
-			Subsystem: "conn",
-			Name:      "requests_duration_seconds",
-			Help:      "Time taken to complete a database request and process the response.",
-		},
-		labels,
-	)
-
-	prometheus.MustRegister(RequestTotal)
-	prometheus.MustRegister(ErrorsTotal)
-	prometheus.MustRegister(Duration)
+	duration *prometheus.HistogramVec
 }
 
-// Tracer is a Prometheus query collector for pgx metrics.
-type Tracer struct{}
+// NewTracer creates a new Tracer.
+func NewTracer() *Tracer {
+	labels := []string{"db_name", "db_operation", "db_operation_phase"}
+
+	return &Tracer{
+		requestTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "pgx",
+				Subsystem: "conn",
+				Name:      "requests_total",
+				Help:      "Total number of database requests.",
+			},
+			labels,
+		),
+
+		errorsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "pgx",
+				Subsystem: "conn",
+				Name:      "request_errors_total",
+				Help:      "Total number of database request errors.",
+			},
+			labels,
+		),
+		duration: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: "pgx",
+				Subsystem: "conn",
+				Name:      "requests_duration_seconds",
+				Help:      "Time taken to complete a database request and process the response.",
+			},
+			labels,
+		),
+	}
+}
+
+// Register registers the metrics.
+func (q *Tracer) Register(r prometheus.Registerer) {
+	for _, item := range q.collectors() {
+		r.MustRegister(item)
+	}
+}
+
+// Unregister unregisters the metrics.
+func (q *Tracer) Unregister(r prometheus.Registerer) {
+	for _, item := range q.collectors() {
+		r.Unregister(item)
+	}
+}
 
 // TraceQueryStart implements pgx.QueryTracer.
 func (q *Tracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, start pgx.TraceQueryStartData) context.Context {
@@ -72,7 +82,7 @@ func (q *Tracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, start pgx.
 		"db_operation_phase": "query_start",
 	}
 
-	RequestTotal.With(labels).Inc()
+	q.requestTotal.With(labels).Inc()
 
 	data := &TraceQueryData{
 		StartedAt: time.Now(),
@@ -93,10 +103,10 @@ func (q *Tracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, end pgx.Trac
 		}
 
 		if end.Err != nil {
-			ErrorsTotal.With(labels).Inc()
+			q.errorsTotal.With(labels).Inc()
 		}
 
-		Duration.With(labels).Observe(time.Since(data.StartedAt).Seconds())
+		q.duration.With(labels).Observe(time.Since(data.StartedAt).Seconds())
 	}
 }
 
@@ -112,7 +122,7 @@ func (q *Tracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, start pgx.
 		"db_operation_phase": "batch_start",
 	}
 
-	RequestTotal.With(labels).Inc()
+	q.requestTotal.With(labels).Inc()
 
 	return context.WithValue(ctx, TraceBatchKey, data)
 }
@@ -126,11 +136,11 @@ func (q *Tracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pgx.T
 	}
 
 	if data.Err != nil {
-		ErrorsTotal.With(labels).Inc()
+		q.errorsTotal.With(labels).Inc()
 	}
 
 	if data, ok := ctx.Value(TraceQueryKey).(*TraceBatchData); ok {
-		Duration.With(labels).Observe(time.Since(data.StartedAt).Seconds())
+		q.duration.With(labels).Observe(time.Since(data.StartedAt).Seconds())
 	}
 }
 
@@ -144,10 +154,10 @@ func (q *Tracer) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, end pgx.Trac
 		}
 
 		if end.Err != nil {
-			ErrorsTotal.With(labels).Inc()
+			q.errorsTotal.With(labels).Inc()
 		}
 
-		Duration.With(labels).Observe(time.Since(data.StartedAt).Seconds())
+		q.duration.With(labels).Observe(time.Since(data.StartedAt).Seconds())
 	}
 }
 
@@ -159,4 +169,12 @@ func (q *Tracer) name(v string) string {
 	}
 
 	return "unknown"
+}
+
+func (q *Tracer) collectors() []prometheus.Collector {
+	return []prometheus.Collector{
+		q.requestTotal,
+		q.errorsTotal,
+		q.duration,
+	}
 }
