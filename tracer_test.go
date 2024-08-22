@@ -2,14 +2,14 @@ package pgxprom_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgx-contrib/pgxprom"
 	"github.com/prometheus/client_golang/prometheus"
 )
-
-var count int
 
 func ExampleTracer() {
 	config, err := pgxpool.ParseConfig(os.Getenv("PGX_DATABASE_URL"))
@@ -27,9 +27,27 @@ func ExampleTracer() {
 	if err != nil {
 		panic(err)
 	}
+	defer conn.Close()
 
-	row := conn.QueryRow(context.TODO(), "SELECT 1")
-	if err := row.Scan(&count); err != nil {
+	rows, err := conn.Query(context.TODO(), "SELECT * from customer")
+	if err != nil {
 		panic(err)
+	}
+	// close the rows
+	defer rows.Close()
+
+	// Customer struct must be defined
+	type Customer struct {
+		FirstName string `db:"first_name"`
+		LastName  string `db:"last_name"`
+	}
+
+	for rows.Next() {
+		customer, err := pgx.RowToStructByName[Customer](rows)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Println(customer.FirstName)
 	}
 }
