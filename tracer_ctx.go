@@ -3,6 +3,8 @@ package pgxprom
 import (
 	"reflect"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // ContextKey represents a context key.
@@ -35,4 +37,5 @@ var TraceBatchKey = &ContextKey{
 // TraceBatchData represents a batch data
 type TraceBatchData struct {
 	StartedAt time.Time
+	Batch     *pgx.Batch
 }
