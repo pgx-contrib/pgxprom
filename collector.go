@@ -1,8 +1,12 @@
 package pgxprom
 
 import (
+	"context"
+	"regexp"
 	"slices"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -57,13 +61,13 @@ func NewPoolStatsCollector() *PoolStatsCollector {
 	}
 }
 
-// Register append the pool the collector
-func (p *PoolStatsCollector) Register(pool *pgxpool.Pool) {
+// Add append the pool the collector
+func (p *PoolStatsCollector) Add(pool *pgxpool.Pool) {
 	p.pools = append(p.pools, pool)
 }
 
-// Unregister removes the pool from the collector
-func (p *PoolStatsCollector) Unregister(pool *pgxpool.Pool) {
+// Remove removes the pool from the collector
+func (p *PoolStatsCollector) Remove(pool *pgxpool.Pool) {
 	p.pools = slices.DeleteFunc(p.pools, func(elem *pgxpool.Pool) bool {
 		return pool == elem
 	})
@@ -105,4 +109,172 @@ func (p *PoolStatsCollector) Collect(metrics chan<- prometheus.Metric) {
 		metrics <- prometheus.MustNewConstMetric(p.maxLifetimeDestroyCount, prometheus.CounterValue, float64(stats.MaxLifetimeDestroyCount()), labels...)
 		metrics <- prometheus.MustNewConstMetric(p.maxIdleDestroyCount, prometheus.CounterValue, float64(stats.MaxIdleDestroyCount()), labels...)
 	}
+}
+
+var (
+	_ pgx.QueryTracer      = (*PoolTraceCollector)(nil)
+	_ pgx.BatchTracer      = (*PoolTraceCollector)(nil)
+	_ prometheus.Collector = (*PoolTraceCollector)(nil)
+)
+
+// PoolTraceCollector is a Prometheus query collector for pgx metrics.
+type PoolTraceCollector struct {
+	// Request is the total number of database requests.
+	requestTotal *prometheus.CounterVec
+	// ErrorsTotal is the total number of database request errors.
+	errorsTotal *prometheus.CounterVec
+	// Duration is the time taken to complete a database request and process the response.
+	duration *prometheus.HistogramVec
+}
+
+// NewPoolTraceCollector creates a new Tracer.
+func NewPoolTraceCollector() *PoolTraceCollector {
+	labels := []string{"db_name", "db_operation", "db_operation_phase"}
+
+	return &PoolTraceCollector{
+		requestTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "pgx",
+				Subsystem: "conn",
+				Name:      "requests_total",
+				Help:      "Total number of database requests.",
+			},
+			labels,
+		),
+
+		errorsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "pgx",
+				Subsystem: "conn",
+				Name:      "request_errors_total",
+				Help:      "Total number of database request errors.",
+			},
+			labels,
+		),
+		duration: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: "pgx",
+				Subsystem: "conn",
+				Name:      "requests_duration_seconds",
+				Help:      "Time taken to complete a database request and process the response.",
+			},
+			labels,
+		),
+	}
+}
+
+// Collect implements prometheus.Collector.
+func (q *PoolTraceCollector) Collect(metrics chan<- prometheus.Metric) {
+	q.requestTotal.Collect(metrics)
+	q.errorsTotal.Collect(metrics)
+	q.duration.Collect(metrics)
+}
+
+// Describe implements prometheus.Collector.
+func (q *PoolTraceCollector) Describe(descs chan<- *prometheus.Desc) {
+	q.requestTotal.Describe(descs)
+	q.errorsTotal.Describe(descs)
+	q.duration.Describe(descs)
+}
+
+// TraceQueryStart implements pgx.QueryTracer.
+func (q *PoolTraceCollector) TraceQueryStart(ctx context.Context, conn *pgx.Conn, args pgx.TraceQueryStartData) context.Context {
+	labels := prometheus.Labels{
+		"db_name":            conn.Config().Database,
+		"db_operation":       q.name(args.SQL),
+		"db_operation_phase": "query_start",
+	}
+
+	q.requestTotal.With(labels).Inc()
+
+	data := &TraceQueryData{
+		StartedAt: time.Now(),
+		SQL:       args.SQL,
+		Args:      args.Args,
+	}
+
+	return context.WithValue(ctx, TraceQueryKey, data)
+}
+
+// TraceQueryEnd implements pgx.QueryTracer.
+func (q *PoolTraceCollector) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, args pgx.TraceQueryEndData) {
+	if data, ok := ctx.Value(TraceQueryKey).(*TraceQueryData); ok {
+		labels := prometheus.Labels{
+			"db_name":            conn.Config().Database,
+			"db_operation":       q.name(data.SQL),
+			"db_operation_phase": "query_end",
+		}
+
+		if args.Err != nil {
+			q.errorsTotal.With(labels).Inc()
+		}
+
+		q.duration.With(labels).Observe(time.Since(data.StartedAt).Seconds())
+	}
+}
+
+// TraceBatchStart implements pgx.BatchTracer.
+func (q *PoolTraceCollector) TraceBatchStart(ctx context.Context, conn *pgx.Conn, args pgx.TraceBatchStartData) context.Context {
+	data := &TraceBatchData{
+		StartedAt: time.Now(),
+		Batch:     args.Batch,
+	}
+
+	for _, query := range args.Batch.QueuedQueries {
+		labels := prometheus.Labels{
+			"db_name":            conn.Config().Database,
+			"db_operation":       q.name(query.SQL),
+			"db_operation_phase": "batch_start",
+		}
+
+		q.requestTotal.With(labels).Inc()
+	}
+
+	return context.WithValue(ctx, TraceBatchKey, data)
+}
+
+// TraceBatchQuery implements pgx.BatchTracer.
+func (q *PoolTraceCollector) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchQueryData) {
+	labels := prometheus.Labels{
+		"db_name":            conn.Config().Database,
+		"db_operation":       q.name(data.SQL),
+		"db_operation_phase": "batch_query",
+	}
+
+	if data.Err != nil {
+		q.errorsTotal.With(labels).Inc()
+	}
+
+	if data, ok := ctx.Value(TraceQueryKey).(*TraceBatchData); ok {
+		q.duration.With(labels).Observe(time.Since(data.StartedAt).Seconds())
+	}
+}
+
+// TraceBatchEnd implements pgx.BatchTracer.
+func (q *PoolTraceCollector) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, args pgx.TraceBatchEndData) {
+	if data, ok := ctx.Value(TraceQueryKey).(*TraceBatchData); ok {
+		for _, query := range data.Batch.QueuedQueries {
+			labels := prometheus.Labels{
+				"db_name":            conn.Config().Database,
+				"db_operation":       q.name(query.SQL),
+				"db_operation_phase": "batch_end",
+			}
+
+			if args.Err != nil {
+				q.errorsTotal.With(labels).Inc()
+			}
+
+			q.duration.With(labels).Observe(time.Since(data.StartedAt).Seconds())
+		}
+	}
+}
+
+var pattern = regexp.MustCompile(`^--\s+name:\s+(\w+)`)
+
+func (q *PoolTraceCollector) name(v string) string {
+	if match := pattern.FindStringSubmatch(v); len(match) == 2 {
+		return match[1]
+	}
+
+	return "unknown"
 }
