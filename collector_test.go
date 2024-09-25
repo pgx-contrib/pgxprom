@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-func ExamplePoolStatsCollector() {
+func ExamplePoolCollector() {
 	config, err := pgxpool.ParseConfig(os.Getenv("PGX_DATABASE_URL"))
 	if err != nil {
 		panic(err)
@@ -22,7 +22,7 @@ func ExamplePoolStatsCollector() {
 		panic(err)
 	}
 
-	collector := pgxprom.NewPoolStatsCollector()
+	collector := pgxprom.NewPoolCollector()
 	// register the pool
 	collector.Add(pool)
 	// register the collector
@@ -31,13 +31,13 @@ func ExamplePoolStatsCollector() {
 	}
 }
 
-func ExamplePoolTraceCollector() {
+func ExampleQueryTracer() {
 	config, err := pgxpool.ParseConfig(os.Getenv("PGX_DATABASE_URL"))
 	if err != nil {
 		panic(err)
 	}
 
-	collector := pgxprom.NewPoolTraceCollector()
+	collector := pgxprom.NewQueryCollector()
 	// register the tracer
 	prometheus.Register(collector)
 	// set the tracer on the config

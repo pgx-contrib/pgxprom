@@ -11,10 +11,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var _ prometheus.Collector = (*PoolStatsCollector)(nil)
+var _ prometheus.Collector = (*PoolCollector)(nil)
 
-// PoolStatsCollector is a Prometheus pool collector for pgx metrics.
-type PoolStatsCollector struct {
+// PoolCollector is a Prometheus pool collector for pgx metrics.
+type PoolCollector struct {
 	acquireConns            *prometheus.Desc
 	canceledAcquireCount    *prometheus.Desc
 	constructingConns       *prometheus.Desc
@@ -28,15 +28,15 @@ type PoolStatsCollector struct {
 	pools                   []*pgxpool.Pool
 }
 
-// NewPoolStatsCollector returns a new collector.
-func NewPoolStatsCollector() *PoolStatsCollector {
+// NewPoolCollector returns a new collector.
+func NewPoolCollector() *PoolCollector {
 	labels := []string{"database"}
 
 	fqdn := func(v string) string {
 		return prometheus.BuildFQName("pgx", "pool", v)
 	}
 
-	return &PoolStatsCollector{
+	return &PoolCollector{
 		// metrics
 		acquireConns: prometheus.NewDesc(fqdn("acquire_connections"),
 			"Number of connections currently in the process of being acquired", labels, nil),
@@ -62,19 +62,19 @@ func NewPoolStatsCollector() *PoolStatsCollector {
 }
 
 // Add append the pool the collector
-func (p *PoolStatsCollector) Add(pool *pgxpool.Pool) {
+func (p *PoolCollector) Add(pool *pgxpool.Pool) {
 	p.pools = append(p.pools, pool)
 }
 
 // Remove removes the pool from the collector
-func (p *PoolStatsCollector) Remove(pool *pgxpool.Pool) {
+func (p *PoolCollector) Remove(pool *pgxpool.Pool) {
 	p.pools = slices.DeleteFunc(p.pools, func(elem *pgxpool.Pool) bool {
 		return pool == elem
 	})
 }
 
 // Describe implements the prometheus.Collector interface.
-func (p *PoolStatsCollector) Describe(descs chan<- *prometheus.Desc) {
+func (p *PoolCollector) Describe(descs chan<- *prometheus.Desc) {
 	descs <- p.acquireConns
 	descs <- p.canceledAcquireCount
 	descs <- p.constructingConns
@@ -88,7 +88,7 @@ func (p *PoolStatsCollector) Describe(descs chan<- *prometheus.Desc) {
 }
 
 // Collect implements the prometheus.Collector interface.
-func (p *PoolStatsCollector) Collect(metrics chan<- prometheus.Metric) {
+func (p *PoolCollector) Collect(metrics chan<- prometheus.Metric) {
 	for _, pool := range p.pools {
 		var (
 			stats  = pool.Stat()
@@ -112,13 +112,13 @@ func (p *PoolStatsCollector) Collect(metrics chan<- prometheus.Metric) {
 }
 
 var (
-	_ pgx.QueryTracer      = (*PoolTraceCollector)(nil)
-	_ pgx.BatchTracer      = (*PoolTraceCollector)(nil)
-	_ prometheus.Collector = (*PoolTraceCollector)(nil)
+	_ pgx.QueryTracer      = (*QueryCollector)(nil)
+	_ pgx.BatchTracer      = (*QueryCollector)(nil)
+	_ prometheus.Collector = (*QueryCollector)(nil)
 )
 
-// PoolTraceCollector is a Prometheus query collector for pgx metrics.
-type PoolTraceCollector struct {
+// QueryCollector is a Prometheus query collector for pgx metrics.
+type QueryCollector struct {
 	// Request is the total number of database requests.
 	requestTotal *prometheus.CounterVec
 	// ErrorsTotal is the total number of database request errors.
@@ -127,11 +127,11 @@ type PoolTraceCollector struct {
 	duration *prometheus.HistogramVec
 }
 
-// NewPoolTraceCollector creates a new Tracer.
-func NewPoolTraceCollector() *PoolTraceCollector {
+// NewQueryCollector creates a new Tracer.
+func NewQueryCollector() *QueryCollector {
 	labels := []string{"db_name", "db_operation", "db_statement", "db_pgx_operation"}
 
-	return &PoolTraceCollector{
+	return &QueryCollector{
 		requestTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: "pgx",
@@ -164,21 +164,21 @@ func NewPoolTraceCollector() *PoolTraceCollector {
 }
 
 // Collect implements prometheus.Collector.
-func (q *PoolTraceCollector) Collect(metrics chan<- prometheus.Metric) {
+func (q *QueryCollector) Collect(metrics chan<- prometheus.Metric) {
 	q.requestTotal.Collect(metrics)
 	q.errorsTotal.Collect(metrics)
 	q.duration.Collect(metrics)
 }
 
 // Describe implements prometheus.Collector.
-func (q *PoolTraceCollector) Describe(descs chan<- *prometheus.Desc) {
+func (q *QueryCollector) Describe(descs chan<- *prometheus.Desc) {
 	q.requestTotal.Describe(descs)
 	q.errorsTotal.Describe(descs)
 	q.duration.Describe(descs)
 }
 
 // TraceQueryStart implements pgx.QueryTracer.
-func (q *PoolTraceCollector) TraceQueryStart(ctx context.Context, conn *pgx.Conn, args pgx.TraceQueryStartData) context.Context {
+func (q *QueryCollector) TraceQueryStart(ctx context.Context, conn *pgx.Conn, args pgx.TraceQueryStartData) context.Context {
 	labels := prometheus.Labels{
 		"db_name":          conn.Config().Database,
 		"db_statement":     args.SQL,
@@ -198,7 +198,7 @@ func (q *PoolTraceCollector) TraceQueryStart(ctx context.Context, conn *pgx.Conn
 }
 
 // TraceQueryEnd implements pgx.QueryTracer.
-func (q *PoolTraceCollector) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, args pgx.TraceQueryEndData) {
+func (q *QueryCollector) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, args pgx.TraceQueryEndData) {
 	if data, ok := ctx.Value(TraceQueryKey).(*TraceQueryData); ok {
 		labels := prometheus.Labels{
 			"db_name":          conn.Config().Database,
@@ -216,7 +216,7 @@ func (q *PoolTraceCollector) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, 
 }
 
 // TraceBatchStart implements pgx.BatchTracer.
-func (q *PoolTraceCollector) TraceBatchStart(ctx context.Context, conn *pgx.Conn, args pgx.TraceBatchStartData) context.Context {
+func (q *QueryCollector) TraceBatchStart(ctx context.Context, conn *pgx.Conn, args pgx.TraceBatchStartData) context.Context {
 	data := &TraceBatchData{
 		StartedAt: time.Now(),
 		Batch:     args.Batch,
@@ -237,7 +237,7 @@ func (q *PoolTraceCollector) TraceBatchStart(ctx context.Context, conn *pgx.Conn
 }
 
 // TraceBatchQuery implements pgx.BatchTracer.
-func (q *PoolTraceCollector) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchQueryData) {
+func (q *QueryCollector) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchQueryData) {
 	labels := prometheus.Labels{
 		"db_name":          conn.Config().Database,
 		"db_statement":     data.SQL,
@@ -255,7 +255,7 @@ func (q *PoolTraceCollector) TraceBatchQuery(ctx context.Context, conn *pgx.Conn
 }
 
 // TraceBatchEnd implements pgx.BatchTracer.
-func (q *PoolTraceCollector) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, args pgx.TraceBatchEndData) {
+func (q *QueryCollector) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, args pgx.TraceBatchEndData) {
 	if data, ok := ctx.Value(TraceQueryKey).(*TraceBatchData); ok {
 		for _, query := range data.Batch.QueuedQueries {
 			labels := prometheus.Labels{
@@ -276,7 +276,7 @@ func (q *PoolTraceCollector) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, 
 
 var pattern = regexp.MustCompile(`^--\s+name:\s+(\w+)`)
 
-func (q *PoolTraceCollector) name(v string) string {
+func (q *QueryCollector) name(v string) string {
 	if match := pattern.FindStringSubmatch(v); len(match) == 2 {
 		return match[1]
 	}
