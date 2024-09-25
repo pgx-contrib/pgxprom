@@ -129,7 +129,7 @@ type PoolTraceCollector struct {
 
 // NewPoolTraceCollector creates a new Tracer.
 func NewPoolTraceCollector() *PoolTraceCollector {
-	labels := []string{"db_name", "db_operation", "db_operation_phase"}
+	labels := []string{"db_name", "db_operation", "db_statement", "db_pgx_operation"}
 
 	return &PoolTraceCollector{
 		requestTotal: prometheus.NewCounterVec(
@@ -180,9 +180,10 @@ func (q *PoolTraceCollector) Describe(descs chan<- *prometheus.Desc) {
 // TraceQueryStart implements pgx.QueryTracer.
 func (q *PoolTraceCollector) TraceQueryStart(ctx context.Context, conn *pgx.Conn, args pgx.TraceQueryStartData) context.Context {
 	labels := prometheus.Labels{
-		"db_name":            conn.Config().Database,
-		"db_operation":       q.name(args.SQL),
-		"db_operation_phase": "query_start",
+		"db_name":          conn.Config().Database,
+		"db_statement":     args.SQL,
+		"db_operation":     q.name(args.SQL),
+		"db_pgx_operation": "query_start",
 	}
 
 	q.requestTotal.With(labels).Inc()
@@ -200,9 +201,10 @@ func (q *PoolTraceCollector) TraceQueryStart(ctx context.Context, conn *pgx.Conn
 func (q *PoolTraceCollector) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, args pgx.TraceQueryEndData) {
 	if data, ok := ctx.Value(TraceQueryKey).(*TraceQueryData); ok {
 		labels := prometheus.Labels{
-			"db_name":            conn.Config().Database,
-			"db_operation":       q.name(data.SQL),
-			"db_operation_phase": "query_end",
+			"db_name":          conn.Config().Database,
+			"db_statement":     data.SQL,
+			"db_operation":     q.name(data.SQL),
+			"db_pgx_operation": "query_end",
 		}
 
 		if args.Err != nil {
@@ -222,9 +224,10 @@ func (q *PoolTraceCollector) TraceBatchStart(ctx context.Context, conn *pgx.Conn
 
 	for _, query := range args.Batch.QueuedQueries {
 		labels := prometheus.Labels{
-			"db_name":            conn.Config().Database,
-			"db_operation":       q.name(query.SQL),
-			"db_operation_phase": "batch_start",
+			"db_name":          conn.Config().Database,
+			"db_statement":     query.SQL,
+			"db_operation":     q.name(query.SQL),
+			"db_pgx_operation": "batch_start",
 		}
 
 		q.requestTotal.With(labels).Inc()
@@ -236,9 +239,10 @@ func (q *PoolTraceCollector) TraceBatchStart(ctx context.Context, conn *pgx.Conn
 // TraceBatchQuery implements pgx.BatchTracer.
 func (q *PoolTraceCollector) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchQueryData) {
 	labels := prometheus.Labels{
-		"db_name":            conn.Config().Database,
-		"db_operation":       q.name(data.SQL),
-		"db_operation_phase": "batch_query",
+		"db_name":          conn.Config().Database,
+		"db_statement":     data.SQL,
+		"db_operation":     q.name(data.SQL),
+		"db_pgx_operation": "batch_query",
 	}
 
 	if data.Err != nil {
@@ -255,9 +259,10 @@ func (q *PoolTraceCollector) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, 
 	if data, ok := ctx.Value(TraceQueryKey).(*TraceBatchData); ok {
 		for _, query := range data.Batch.QueuedQueries {
 			labels := prometheus.Labels{
-				"db_name":            conn.Config().Database,
-				"db_operation":       q.name(query.SQL),
-				"db_operation_phase": "batch_end",
+				"db_name":          conn.Config().Database,
+				"db_statement":     query.SQL,
+				"db_operation":     q.name(query.SQL),
+				"db_pgx_operation": "batch_end",
 			}
 
 			if args.Err != nil {
