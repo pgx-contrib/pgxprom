@@ -4,6 +4,7 @@ import (
 	"context"
 	"regexp"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -15,16 +16,17 @@ var _ prometheus.Collector = (*PoolCollector)(nil)
 
 // PoolCollector is a Prometheus pool collector for pgx metrics.
 type PoolCollector struct {
+	mu                      sync.RWMutex
 	acquireConns            *prometheus.Desc
-	canceledAcquireCount    *prometheus.Desc
+	canceledAcquiresTotal   *prometheus.Desc
 	constructingConns       *prometheus.Desc
-	emptyAcquireCount       *prometheus.Desc
+	emptyAcquiresTotal      *prometheus.Desc
 	idleConns               *prometheus.Desc
 	maxConns                *prometheus.Desc
 	totalConns              *prometheus.Desc
-	newConnsCount           *prometheus.Desc
-	maxLifetimeDestroyCount *prometheus.Desc
-	maxIdleDestroyCount     *prometheus.Desc
+	newConnectionsTotal     *prometheus.Desc
+	maxLifetimeDestroysTotal *prometheus.Desc
+	maxIdleDestroysTotal    *prometheus.Desc
 	pools                   []*pgxpool.Pool
 }
 
@@ -37,37 +39,40 @@ func NewPoolCollector() *PoolCollector {
 	}
 
 	return &PoolCollector{
-		// metrics
 		acquireConns: prometheus.NewDesc(fqdn("acquire_connections"),
-			"Number of connections currently in the process of being acquired", labels, nil),
-		canceledAcquireCount: prometheus.NewDesc(fqdn("canceled_acquire_count"),
-			"Number of times a connection acquire was canceled", labels, nil),
+			"Number of connections currently in the process of being acquired.", labels, nil),
+		canceledAcquiresTotal: prometheus.NewDesc(fqdn("canceled_acquires_total"),
+			"Total number of connection acquires that were canceled.", labels, nil),
 		constructingConns: prometheus.NewDesc(fqdn("constructing_connections"),
-			"Number of connections currently in the process of being constructed", labels, nil),
-		emptyAcquireCount: prometheus.NewDesc(fqdn("empty_acquire_count"),
-			"Number of times a connection acquire was canceled", labels, nil),
+			"Number of connections currently in the process of being constructed.", labels, nil),
+		emptyAcquiresTotal: prometheus.NewDesc(fqdn("empty_acquires_total"),
+			"Total number of connection acquires that waited on an empty pool.", labels, nil),
 		idleConns: prometheus.NewDesc(fqdn("idle_connections"),
-			"Number of idle connections in the pool", labels, nil),
+			"Number of idle connections in the pool.", labels, nil),
 		maxConns: prometheus.NewDesc(fqdn("max_connections"),
-			"Maximum number of connections allowed in the pool", labels, nil),
+			"Maximum number of connections allowed in the pool.", labels, nil),
 		totalConns: prometheus.NewDesc(fqdn("total_connections"),
-			"Total number of connections in the pool", labels, nil),
-		newConnsCount: prometheus.NewDesc(fqdn("new_connections_count"),
-			"Number of new connections created", labels, nil),
-		maxLifetimeDestroyCount: prometheus.NewDesc(fqdn("max_lifetime_destroy_count"),
-			"Number of connections destroyed due to MaxLifetime", labels, nil),
-		maxIdleDestroyCount: prometheus.NewDesc(fqdn("max_idle_destroy_count"),
-			"Number of connections destroyed due to MaxIdleTime", labels, nil),
+			"Total number of connections in the pool.", labels, nil),
+		newConnectionsTotal: prometheus.NewDesc(fqdn("new_connections_total"),
+			"Total number of new connections created.", labels, nil),
+		maxLifetimeDestroysTotal: prometheus.NewDesc(fqdn("max_lifetime_destroys_total"),
+			"Total number of connections destroyed due to MaxLifetime.", labels, nil),
+		maxIdleDestroysTotal: prometheus.NewDesc(fqdn("max_idle_destroys_total"),
+			"Total number of connections destroyed due to MaxIdleTime.", labels, nil),
 	}
 }
 
-// Add append the pool the collector
+// Add appends the pool to the collector.
 func (p *PoolCollector) Add(pool *pgxpool.Pool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.pools = append(p.pools, pool)
 }
 
-// Remove removes the pool from the collector
+// Remove removes the pool from the collector.
 func (p *PoolCollector) Remove(pool *pgxpool.Pool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.pools = slices.DeleteFunc(p.pools, func(elem *pgxpool.Pool) bool {
 		return pool == elem
 	})
@@ -76,38 +81,38 @@ func (p *PoolCollector) Remove(pool *pgxpool.Pool) {
 // Describe implements the prometheus.Collector interface.
 func (p *PoolCollector) Describe(descs chan<- *prometheus.Desc) {
 	descs <- p.acquireConns
-	descs <- p.canceledAcquireCount
+	descs <- p.canceledAcquiresTotal
 	descs <- p.constructingConns
-	descs <- p.emptyAcquireCount
+	descs <- p.emptyAcquiresTotal
 	descs <- p.idleConns
 	descs <- p.maxConns
 	descs <- p.totalConns
-	descs <- p.newConnsCount
-	descs <- p.maxLifetimeDestroyCount
-	descs <- p.maxIdleDestroyCount
+	descs <- p.newConnectionsTotal
+	descs <- p.maxLifetimeDestroysTotal
+	descs <- p.maxIdleDestroysTotal
 }
 
 // Collect implements the prometheus.Collector interface.
 func (p *PoolCollector) Collect(metrics chan<- prometheus.Metric) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	for _, pool := range p.pools {
 		var (
 			stats  = pool.Stat()
-			labels = []string{
-				pool.Config().ConnConfig.Database,
-			}
+			labels = []string{pool.Config().ConnConfig.Database}
 		)
 
-		// collect the metrics
 		metrics <- prometheus.MustNewConstMetric(p.acquireConns, prometheus.GaugeValue, float64(stats.AcquiredConns()), labels...)
-		metrics <- prometheus.MustNewConstMetric(p.canceledAcquireCount, prometheus.CounterValue, float64(stats.CanceledAcquireCount()), labels...)
+		metrics <- prometheus.MustNewConstMetric(p.canceledAcquiresTotal, prometheus.CounterValue, float64(stats.CanceledAcquireCount()), labels...)
 		metrics <- prometheus.MustNewConstMetric(p.constructingConns, prometheus.GaugeValue, float64(stats.ConstructingConns()), labels...)
-		metrics <- prometheus.MustNewConstMetric(p.emptyAcquireCount, prometheus.CounterValue, float64(stats.EmptyAcquireCount()), labels...)
+		metrics <- prometheus.MustNewConstMetric(p.emptyAcquiresTotal, prometheus.CounterValue, float64(stats.EmptyAcquireCount()), labels...)
 		metrics <- prometheus.MustNewConstMetric(p.idleConns, prometheus.GaugeValue, float64(stats.IdleConns()), labels...)
 		metrics <- prometheus.MustNewConstMetric(p.maxConns, prometheus.GaugeValue, float64(stats.MaxConns()), labels...)
 		metrics <- prometheus.MustNewConstMetric(p.totalConns, prometheus.GaugeValue, float64(stats.TotalConns()), labels...)
-		metrics <- prometheus.MustNewConstMetric(p.newConnsCount, prometheus.CounterValue, float64(stats.NewConnsCount()), labels...)
-		metrics <- prometheus.MustNewConstMetric(p.maxLifetimeDestroyCount, prometheus.CounterValue, float64(stats.MaxLifetimeDestroyCount()), labels...)
-		metrics <- prometheus.MustNewConstMetric(p.maxIdleDestroyCount, prometheus.CounterValue, float64(stats.MaxIdleDestroyCount()), labels...)
+		metrics <- prometheus.MustNewConstMetric(p.newConnectionsTotal, prometheus.CounterValue, float64(stats.NewConnsCount()), labels...)
+		metrics <- prometheus.MustNewConstMetric(p.maxLifetimeDestroysTotal, prometheus.CounterValue, float64(stats.MaxLifetimeDestroyCount()), labels...)
+		metrics <- prometheus.MustNewConstMetric(p.maxIdleDestroysTotal, prometheus.CounterValue, float64(stats.MaxIdleDestroyCount()), labels...)
 	}
 }
 
@@ -119,17 +124,14 @@ var (
 
 // QueryCollector is a Prometheus query collector for pgx metrics.
 type QueryCollector struct {
-	// Request is the total number of database requests.
 	requestTotal *prometheus.CounterVec
-	// ErrorsTotal is the total number of database request errors.
-	errorsTotal *prometheus.CounterVec
-	// Duration is the time taken to complete a database request and process the response.
-	duration *prometheus.HistogramVec
+	errorsTotal  *prometheus.CounterVec
+	duration     *prometheus.HistogramVec
 }
 
-// NewQueryCollector creates a new Tracer.
+// NewQueryCollector creates a new QueryCollector.
 func NewQueryCollector() *QueryCollector {
-	labels := []string{"db_name", "db_operation", "db_statement", "db_pgx_operation"}
+	labels := []string{"database", "db_operation"}
 
 	return &QueryCollector{
 		requestTotal: prometheus.NewCounterVec(
@@ -141,7 +143,6 @@ func NewQueryCollector() *QueryCollector {
 			},
 			labels,
 		),
-
 		errorsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: "pgx",
@@ -155,8 +156,9 @@ func NewQueryCollector() *QueryCollector {
 			prometheus.HistogramOpts{
 				Namespace: "pgx",
 				Subsystem: "conn",
-				Name:      "requests_duration_seconds",
-				Help:      "Time taken to complete a database request and process the response.",
+				Name:      "request_duration_seconds",
+				Help:      "Time taken to complete a database request.",
+				Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 10},
 			},
 			labels,
 		),
@@ -180,97 +182,85 @@ func (q *QueryCollector) Describe(descs chan<- *prometheus.Desc) {
 // TraceQueryStart implements pgx.QueryTracer.
 func (q *QueryCollector) TraceQueryStart(ctx context.Context, conn *pgx.Conn, args pgx.TraceQueryStartData) context.Context {
 	labels := prometheus.Labels{
-		"db_name":          conn.Config().Database,
-		"db_statement":     args.SQL,
-		"db_operation":     q.name(args.SQL),
-		"db_pgx_operation": "query_start",
+		"database":     conn.Config().Database,
+		"db_operation": q.name(args.SQL),
 	}
 
 	q.requestTotal.With(labels).Inc()
 
-	data := &TraceQueryData{
+	return context.WithValue(ctx, TraceQueryKey, &TraceQueryData{
 		StartedAt: time.Now(),
 		SQL:       args.SQL,
 		Args:      args.Args,
-	}
-
-	return context.WithValue(ctx, TraceQueryKey, data)
+	})
 }
 
 // TraceQueryEnd implements pgx.QueryTracer.
 func (q *QueryCollector) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, args pgx.TraceQueryEndData) {
-	if data, ok := ctx.Value(TraceQueryKey).(*TraceQueryData); ok {
-		labels := prometheus.Labels{
-			"db_name":          conn.Config().Database,
-			"db_statement":     data.SQL,
-			"db_operation":     q.name(data.SQL),
-			"db_pgx_operation": "query_end",
-		}
-
-		if args.Err != nil {
-			q.errorsTotal.With(labels).Inc()
-		}
-
-		q.duration.With(labels).Observe(time.Since(data.StartedAt).Seconds())
+	data, ok := ctx.Value(TraceQueryKey).(*TraceQueryData)
+	if !ok {
+		return
 	}
+
+	labels := prometheus.Labels{
+		"database":     conn.Config().Database,
+		"db_operation": q.name(data.SQL),
+	}
+
+	if args.Err != nil {
+		q.errorsTotal.With(labels).Inc()
+	}
+
+	q.duration.With(labels).Observe(time.Since(data.StartedAt).Seconds())
 }
 
 // TraceBatchStart implements pgx.BatchTracer.
 func (q *QueryCollector) TraceBatchStart(ctx context.Context, conn *pgx.Conn, args pgx.TraceBatchStartData) context.Context {
-	data := &TraceBatchData{
-		StartedAt: time.Now(),
-		Batch:     args.Batch,
-	}
-
 	for _, query := range args.Batch.QueuedQueries {
 		labels := prometheus.Labels{
-			"db_name":          conn.Config().Database,
-			"db_statement":     query.SQL,
-			"db_operation":     q.name(query.SQL),
-			"db_pgx_operation": "batch_start",
+			"database":     conn.Config().Database,
+			"db_operation": q.name(query.SQL),
 		}
 
 		q.requestTotal.With(labels).Inc()
 	}
 
-	return context.WithValue(ctx, TraceBatchKey, data)
+	return context.WithValue(ctx, TraceBatchKey, &TraceBatchData{
+		StartedAt: time.Now(),
+		Batch:     args.Batch,
+	})
 }
 
 // TraceBatchQuery implements pgx.BatchTracer.
 func (q *QueryCollector) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchQueryData) {
+	if data.Err == nil {
+		return
+	}
+
 	labels := prometheus.Labels{
-		"db_name":          conn.Config().Database,
-		"db_statement":     data.SQL,
-		"db_operation":     q.name(data.SQL),
-		"db_pgx_operation": "batch_query",
+		"database":     conn.Config().Database,
+		"db_operation": q.name(data.SQL),
 	}
 
-	if data.Err != nil {
-		q.errorsTotal.With(labels).Inc()
-	}
-
-	if data, ok := ctx.Value(TraceQueryKey).(*TraceBatchData); ok {
-		q.duration.With(labels).Observe(time.Since(data.StartedAt).Seconds())
-	}
+	q.errorsTotal.With(labels).Inc()
 }
 
 // TraceBatchEnd implements pgx.BatchTracer.
 func (q *QueryCollector) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, args pgx.TraceBatchEndData) {
-	if data, ok := ctx.Value(TraceQueryKey).(*TraceBatchData); ok {
-		for _, query := range data.Batch.QueuedQueries {
-			labels := prometheus.Labels{
-				"db_name":          conn.Config().Database,
-				"db_statement":     query.SQL,
-				"db_operation":     q.name(query.SQL),
-				"db_pgx_operation": "batch_end",
-			}
+	data, ok := ctx.Value(TraceBatchKey).(*TraceBatchData)
+	if !ok {
+		return
+	}
 
-			if args.Err != nil {
-				q.errorsTotal.With(labels).Inc()
-			}
+	elapsed := time.Since(data.StartedAt).Seconds()
 
-			q.duration.With(labels).Observe(time.Since(data.StartedAt).Seconds())
+	for _, query := range data.Batch.QueuedQueries {
+		labels := prometheus.Labels{
+			"database":     conn.Config().Database,
+			"db_operation": q.name(query.SQL),
 		}
+
+		q.duration.With(labels).Observe(elapsed)
 	}
 }
 

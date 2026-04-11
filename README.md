@@ -108,32 +108,30 @@ connection config).
 | Metric | Type | Description |
 |--------|------|-------------|
 | `pgx_pool_acquire_connections` | Gauge | Connections currently being acquired |
-| `pgx_pool_canceled_acquire_count` | Counter | Acquire attempts that were canceled |
+| `pgx_pool_canceled_acquires_total` | Counter | Acquire attempts that were canceled |
 | `pgx_pool_constructing_connections` | Gauge | Connections currently being constructed |
-| `pgx_pool_empty_acquire_count` | Counter | Acquire attempts on an empty pool |
+| `pgx_pool_empty_acquires_total` | Counter | Acquire attempts that waited on an empty pool |
 | `pgx_pool_idle_connections` | Gauge | Idle connections in the pool |
 | `pgx_pool_max_connections` | Gauge | Maximum connections allowed in the pool |
 | `pgx_pool_total_connections` | Gauge | Total connections in the pool |
-| `pgx_pool_new_connections_count` | Counter | New connections created |
-| `pgx_pool_max_lifetime_destroy_count` | Counter | Connections destroyed due to MaxLifetime |
-| `pgx_pool_max_idle_destroy_count` | Counter | Connections destroyed due to MaxIdleTime |
+| `pgx_pool_new_connections_total` | Counter | New connections created |
+| `pgx_pool_max_lifetime_destroys_total` | Counter | Connections destroyed due to MaxLifetime |
+| `pgx_pool_max_idle_destroys_total` | Counter | Connections destroyed due to MaxIdleTime |
 
 ### QueryCollector — `pgx_conn_*`
 
-All query metrics carry four labels:
+All query metrics carry two labels:
 
 | Label | Description |
 |-------|-------------|
-| `db_name` | Database name from the connection config |
+| `database` | Database name from the connection config |
 | `db_operation` | Name extracted from `-- name: <Identifier>` comment, or `unknown` |
-| `db_statement` | Raw SQL string |
-| `db_pgx_operation` | pgx tracer phase: `query_start`, `query_end`, `batch_start`, `batch_query`, `batch_end` |
 
 | Metric | Type | Description |
 |--------|------|-------------|
 | `pgx_conn_requests_total` | Counter | Total database requests |
 | `pgx_conn_request_errors_total` | Counter | Total database request errors |
-| `pgx_conn_requests_duration_seconds` | Histogram | Request latency in seconds |
+| `pgx_conn_request_duration_seconds` | Histogram | Request latency in seconds |
 
 ## Contributing
 
