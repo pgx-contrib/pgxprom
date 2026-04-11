@@ -6,6 +6,7 @@
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![pgx](https://img.shields.io/badge/pgx-v5-blue)](https://github.com/jackc/pgx)
 [![Prometheus](https://img.shields.io/badge/Prometheus-enabled-e6522c?logo=prometheus&logoColor=white)](https://prometheus.io)
+[![Go Reference](https://pkg.go.dev/badge/github.com/pgx-contrib/pgxprom.svg)](https://pkg.go.dev/github.com/pgx-contrib/pgxprom)
 
 Prometheus instrumentation for [pgx v5](https://github.com/jackc/pgx). Provides
 two collectors: `PoolCollector` exposes connection pool metrics, and
