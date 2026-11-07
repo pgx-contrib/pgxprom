@@ -3,16 +3,15 @@
     "devcontainer-env": {
       "inputs": {
         "flake-utils": "flake-utils",
-        "nix-release-bin": "nix-release-bin",
         "nixpkgs": "nixpkgs",
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1793594479,
-        "narHash": "sha256-WgGz4J6d4FfZhARXYwa36Fgqu6aHgQ/ARDXj6DvmpA0=",
+        "lastModified": 1794042100,
+        "narHash": "sha256-WLmJJpntGeuiS43DdtqMIGaxzoM3KrA8BzLkiqJWJ4k=",
         "owner": "devcontainer-env",
         "repo": "devcontainer-env",
-        "rev": "eaa03b154483733988d2eef5bd53584f70c39252",
+        "rev": "8977a0b2e58bb34a32b3f84652ba5373694901b4",
         "type": "github"
       },
       "original": {
@@ -54,31 +53,6 @@
       "original": {
         "owner": "numtide",
         "repo": "flake-utils",
-        "type": "github"
-      }
-    },
-    "nix-release-bin": {
-      "inputs": {
-        "flake-utils": [
-          "devcontainer-env",
-          "flake-utils"
-        ],
-        "nixpkgs": [
-          "devcontainer-env",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1793342667,
-        "narHash": "sha256-jgMj/Esg0wKu6EbPuJjDbYMIkECxaM9341a7TWmYUc0=",
-        "owner": "nixos-contrib",
-        "repo": "nix-release-bin",
-        "rev": "67d4bce1ced735f6d7e29bdfb994560dbaf88d95",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nixos-contrib",
-        "repo": "nix-release-bin",
         "type": "github"
       }
     },
